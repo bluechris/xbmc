@@ -3099,6 +3099,9 @@
     <ClCompile Include="..\..\xbmc\contrib\kissfft\kiss_fftr.c">
       <Filter>contrib\kissfft</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\xbmc\win32\dxerr.cpp">
+      <Filter>win32</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\xbmc\win32\pch.h">
@@ -5991,6 +5994,9 @@
     </ClInclude>
     <ClInclude Include="..\..\xbmc\contrib\kissfft\kiss_fftr.h">
       <Filter>contrib\kissfft</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\xbmc\win32\dxerr.h">
+      <Filter>win32</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
