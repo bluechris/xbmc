@@ -80,7 +80,6 @@ bool CScreenshotSurface::capture()
   if (!m_buffer)
     return false;
 #elif defined(HAS_DX)
-  LPDIRECT3DSURFACE9 lpSurface = NULL, lpBackbuffer = NULL;
   g_graphicsContext.Lock();
   if (g_application.m_pPlayer->IsPlayingVideo())
   {
@@ -88,40 +87,58 @@ bool CScreenshotSurface::capture()
     g_renderManager.SetupScreenshot();
 #endif
   }
+
   g_application.RenderNoPresent();
+  g_Windowing.FinishCommandList();
 
-  if (FAILED(g_Windowing.Get3DDevice()->CreateOffscreenPlainSurface(g_Windowing.GetWidth(), g_Windowing.GetHeight(), D3DFMT_X8R8G8B8, D3DPOOL_SYSTEMMEM, &lpSurface, NULL)))
+  ID3D11DeviceContext* pContext = g_Windowing.GetImmediateContext();
+  ID3D11RenderTargetView* renderTarget = NULL;
+  g_Windowing.Get3D11Context()->OMGetRenderTargets(1, &renderTarget, NULL);
+  ID3D11Resource* backResource = NULL;
+  renderTarget->GetResource(&backResource);
+
+  ID3D11Texture2D* copyTexture = NULL;
+  ID3D11Texture2D* backBuffer = NULL;
+  HRESULT hr = backResource->QueryInterface(__uuidof(ID3D11Texture2D*), reinterpret_cast<void**>(&backBuffer));
+
+  renderTarget->Release();
+  backResource->Release();
+
+  if (FAILED(hr))
     return false;
 
-  if (FAILED(g_Windowing.Get3DDevice()->GetRenderTarget(0, &lpBackbuffer)))
+  D3D11_TEXTURE2D_DESC desc = {};
+  backBuffer->GetDesc(&desc);
+  desc.Usage = D3D11_USAGE_STAGING;
+  desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  desc.BindFlags = 0;
+
+  if (FAILED(g_Windowing.Get3D11Device()->CreateTexture2D(&desc, NULL, &copyTexture)))
+  {
+    SAFE_RELEASE(backBuffer);
     return false;
+  }
 
   // now take screenshot
-  if (SUCCEEDED(g_Windowing.Get3DDevice()->GetRenderTargetData(lpBackbuffer, lpSurface)))
+  pContext->CopyResource(copyTexture, backBuffer);
+
+  D3D11_MAPPED_SUBRESOURCE res;
+  if (SUCCEEDED(pContext->Map(copyTexture, 0, D3D11_MAP_READ, 0, &res)))
   {
-    D3DLOCKED_RECT lr;
-    D3DSURFACE_DESC desc;
-    lpSurface->GetDesc(&desc);
-    if (SUCCEEDED(lpSurface->LockRect(&lr, NULL, D3DLOCK_READONLY)))
-    {
-      m_width = desc.Width;
-      m_height = desc.Height;
-      m_stride = lr.Pitch;
-      m_buffer = new unsigned char[m_height * m_stride];
-      memcpy(m_buffer, lr.pBits, m_height * m_stride);
-      lpSurface->UnlockRect();
-    }
-    else
-    {
-      CLog::Log(LOGERROR, "%s LockRect failed", __FUNCTION__);
-    }
+    m_width = desc.Width;
+    m_height = desc.Height;
+    m_stride = res.RowPitch;
+    m_buffer = new unsigned char[m_height * m_stride];
+    memcpy(m_buffer, res.pData, m_height * m_stride);
+    pContext->Unmap(copyTexture, 0);
   }
   else
   {
-    CLog::Log(LOGERROR, "%s GetBackBuffer failed", __FUNCTION__);
+    CLog::Log(LOGERROR, "%s MAP_READ failed", __FUNCTION__);
   }
-  lpSurface->Release();
-  lpBackbuffer->Release();
+
+  copyTexture->Release();
+  backBuffer->Release();
 
   g_graphicsContext.Unlock();
 
