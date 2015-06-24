@@ -1113,7 +1113,7 @@ bool CRenderSystemDX::PresentRenderImpl(const CDirtyRegionList &dirty)
 
   FinishCommandList();
 
-  if (m_pSwapChain1) 
+  if (m_pSwapChain1)
   {
     // will use optimized present with dirty regions.
     DXGI_PRESENT_PARAMETERS presentParams = {};
@@ -1135,7 +1135,7 @@ bool CRenderSystemDX::PresentRenderImpl(const CDirtyRegionList &dirty)
   {
     m_bResizeRequred = true;
     if (CreateWindowSizeDependentResources())
-      return true;
+      hr = S_OK;
   }
 
   if (FAILED(hr))
@@ -1143,6 +1143,10 @@ bool CRenderSystemDX::PresentRenderImpl(const CDirtyRegionList &dirty)
     CLog::Log(LOGDEBUG, "%s - Present failed. %s", __FUNCTION__, GetErrorDescription(hr).c_str());
     return false;
   }
+
+  // after present swapchain unbinds RT view from immediate context, need to restore it because it can be used by something else
+  if (m_pContext == m_pImdContext)
+    m_pContext->OMSetRenderTargets(1, &m_pRenderTargetView, m_depthStencilView);
 
   return true;
 }

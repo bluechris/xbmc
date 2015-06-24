@@ -91,54 +91,53 @@ bool CScreenshotSurface::capture()
   g_application.RenderNoPresent();
   g_Windowing.FinishCommandList();
 
-  ID3D11DeviceContext* pContext = g_Windowing.GetImmediateContext();
-  ID3D11RenderTargetView* renderTarget = NULL;
-  g_Windowing.Get3D11Context()->OMGetRenderTargets(1, &renderTarget, NULL);
-  ID3D11Resource* backResource = NULL;
-  renderTarget->GetResource(&backResource);
+  ID3D11DeviceContext* pImdContext = g_Windowing.GetImmediateContext();
+  ID3D11DeviceContext* pContext = g_Windowing.Get3D11Context();
+  ID3D11Device* pDevice = g_Windowing.Get3D11Device();
 
-  ID3D11Texture2D* copyTexture = NULL;
-  ID3D11Texture2D* backBuffer = NULL;
-  HRESULT hr = backResource->QueryInterface(__uuidof(ID3D11Texture2D*), reinterpret_cast<void**>(&backBuffer));
+  ID3D11RenderTargetView* pRTView = nullptr;
+  pContext->OMGetRenderTargets(1, &pRTView, nullptr);
+  if (pRTView == nullptr)
+    return false;
 
-  renderTarget->Release();
-  backResource->Release();
+  ID3D11Resource *pRTResource = nullptr;
+  pRTView->GetResource(&pRTResource);
+  SAFE_RELEASE(pRTView);
 
+  ID3D11Texture2D* pCopyTexture = nullptr;
+  ID3D11Texture2D* pRTTexture = nullptr;
+  HRESULT hr = pRTResource->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&pRTTexture));
+  SAFE_RELEASE(pRTResource);
   if (FAILED(hr))
     return false;
 
-  D3D11_TEXTURE2D_DESC desc = {};
-  backBuffer->GetDesc(&desc);
+  D3D11_TEXTURE2D_DESC desc;
+  pRTTexture->GetDesc(&desc);
   desc.Usage = D3D11_USAGE_STAGING;
   desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
   desc.BindFlags = 0;
 
-  if (FAILED(g_Windowing.Get3D11Device()->CreateTexture2D(&desc, NULL, &copyTexture)))
+  if (SUCCEEDED(pDevice->CreateTexture2D(&desc, nullptr, &pCopyTexture)))
   {
-    SAFE_RELEASE(backBuffer);
-    return false;
-  }
+    // take copy
+    pImdContext->CopyResource(pCopyTexture, pRTTexture);
 
-  // now take screenshot
-  pContext->CopyResource(copyTexture, backBuffer);
+    D3D11_MAPPED_SUBRESOURCE res;
+    if (SUCCEEDED(pImdContext->Map(pCopyTexture, 0, D3D11_MAP_READ, 0, &res)))
+    {
+      m_width = desc.Width;
+      m_height = desc.Height;
+      m_stride = res.RowPitch;
+      m_buffer = new unsigned char[m_height * m_stride];
+      memcpy(m_buffer, res.pData, m_height * m_stride);
+      pImdContext->Unmap(pCopyTexture, 0);
+    }
+    else
+      CLog::Log(LOGERROR, "%s: MAP_READ failed.", __FUNCTION__);
 
-  D3D11_MAPPED_SUBRESOURCE res;
-  if (SUCCEEDED(pContext->Map(copyTexture, 0, D3D11_MAP_READ, 0, &res)))
-  {
-    m_width = desc.Width;
-    m_height = desc.Height;
-    m_stride = res.RowPitch;
-    m_buffer = new unsigned char[m_height * m_stride];
-    memcpy(m_buffer, res.pData, m_height * m_stride);
-    pContext->Unmap(copyTexture, 0);
+    SAFE_RELEASE(pCopyTexture);
   }
-  else
-  {
-    CLog::Log(LOGERROR, "%s MAP_READ failed", __FUNCTION__);
-  }
-
-  copyTexture->Release();
-  backBuffer->Release();
+  SAFE_RELEASE(pRTTexture);
 
   g_graphicsContext.Unlock();
 
